@@ -1,0 +1,376 @@
+:root {
+  --bg-1: #fef7ee;
+  --bg-2: #e9f9f3;
+  --surface: rgba(255, 255, 255, 0.88);
+  --surface-strong: #ffffff;
+  --text: #133935;
+  --muted: #496563;
+  --border: rgba(19, 57, 53, 0.14);
+  --accent: #0f8d80;
+  --accent-strong: #0e6e65;
+  --ok: #217647;
+  --danger: #b33939;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#__nuxt {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  color: var(--text);
+  font-family: 'Candara', 'Trebuchet MS', sans-serif;
+  background:
+    radial-gradient(circle at 8% 0%, #ffd3a8 0%, transparent 34%),
+    radial-gradient(circle at 94% 0%, #aadfce 0%, transparent 38%),
+    linear-gradient(155deg, var(--bg-1), var(--bg-2));
+}
+
+.smart-page {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0.9rem 0.9rem 2rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: var(--surface);
+  box-shadow:
+    0 7px 18px rgba(11, 52, 47, 0.1),
+    0 2px 6px rgba(11, 52, 47, 0.07);
+  backdrop-filter: blur(6px);
+}
+
+.hero {
+  padding: 1.2rem;
+  animation: fade-up 0.5s ease both;
+}
+
+.eyebrow {
+  margin: 0;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent-strong);
+  font-family: 'Bahnschrift', 'Trebuchet MS', sans-serif;
+}
+
+.hero h1 {
+  margin: 0.3rem 0 0;
+  font-size: clamp(1.9rem, 5vw, 2.7rem);
+  line-height: 1.04;
+  font-family: 'Bahnschrift', 'Trebuchet MS', sans-serif;
+}
+
+.subtitle {
+  margin: 0.7rem 0 0;
+  color: var(--muted);
+  max-width: 64ch;
+}
+
+.status-strip {
+  margin-top: 0.95rem;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  border-radius: 14px;
+  padding: 0.65rem 0.82rem;
+  border: 1px solid var(--border);
+  background: #f9fffc;
+}
+
+.status-strip.is-online {
+  border-color: rgba(33, 118, 71, 0.35);
+  background: #edfaf2;
+}
+
+.status-strip.is-offline {
+  border-color: rgba(179, 57, 57, 0.36);
+  background: #fff3f3;
+}
+
+.status-strip strong {
+  border-radius: 999px;
+  padding: 0.2rem 0.58rem;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  font-size: 0.84rem;
+}
+
+.chips {
+  margin-top: 0.78rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.chip {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #ffffff;
+  padding: 0.28rem 0.68rem;
+  font-size: 0.84rem;
+}
+
+.hero-actions {
+  margin-top: 0.9rem;
+}
+
+.quick-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.quick-card {
+  padding: 1rem;
+  animation: fade-up 0.48s ease both;
+}
+
+.quick-card h2,
+.history-panel h2 {
+  margin: 0;
+  font-family: 'Bahnschrift', 'Trebuchet MS', sans-serif;
+}
+
+.hint {
+  margin: 0.45rem 0 0.78rem;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.big-value {
+  margin: 0.1rem 0 0.85rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.climate-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.climate-box {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-strong);
+  padding: 0.65rem;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.climate-box span {
+  color: var(--muted);
+  font-size: 0.83rem;
+}
+
+.climate-box strong {
+  font-family: 'Bahnschrift', 'Trebuchet MS', sans-serif;
+  font-size: 1.22rem;
+}
+
+.meta {
+  margin: 0.75rem 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.button-stack {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.62rem;
+  margin-bottom: 0.85rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.32rem;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.field.full {
+  grid-column: 1 / -1;
+}
+
+.field input {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-strong);
+  color: var(--text);
+  padding: 0.6rem 0.72rem;
+  font: inherit;
+}
+
+.field input:focus {
+  outline: 2px solid #9adacc;
+  outline-offset: 1px;
+  border-color: #72b7ab;
+}
+
+.action-btn {
+  width: 100%;
+}
+
+.support-panel,
+.history-panel {
+  padding: 1rem;
+  animation: fade-up 0.48s ease both;
+}
+
+.support-panel details {
+  width: 100%;
+}
+
+.support-panel summary {
+  cursor: pointer;
+  font-family: 'Bahnschrift', 'Trebuchet MS', sans-serif;
+  font-size: 1rem;
+  user-select: none;
+}
+
+.advanced-grid {
+  margin-top: 0.72rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.52rem;
+}
+
+.history-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.log-empty {
+  margin-top: 0.7rem;
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  padding: 1rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+.log-list {
+  margin-top: 0.75rem;
+  display: grid;
+  gap: 0.62rem;
+}
+
+.log-item {
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  border-left: 5px solid var(--accent);
+  background: #ffffff;
+  padding: 0.72rem;
+}
+
+.log-item.is-success {
+  border-left-color: var(--ok);
+}
+
+.log-item.is-error {
+  border-left-color: var(--danger);
+  background: #fff6f6;
+}
+
+.log-item-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.log-meta {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.log-error {
+  margin: 0.32rem 0 0;
+  color: #9b2a2a;
+  font-weight: 600;
+}
+
+.log-item details {
+  margin-top: 0.45rem;
+}
+
+.log-item summary {
+  cursor: pointer;
+  color: #30514d;
+  font-weight: 600;
+}
+
+.log-item pre {
+  margin: 0.35rem 0 0;
+  border-radius: 10px;
+  padding: 0.66rem;
+  overflow: auto;
+  line-height: 1.35;
+  font-size: 0.78rem;
+  background: #132d2b;
+  color: #daf8f0;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 920px) {
+  .smart-page {
+    padding: 0.8rem 0.72rem 1.5rem;
+  }
+
+  .quick-grid,
+  .advanced-grid,
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hero {
+    padding: 1rem;
+  }
+
+  .hero h1 {
+    font-size: clamp(1.6rem, 7vw, 2.2rem);
+  }
+}
+
+@media (max-width: 560px) {
+  .chip {
+    width: 100%;
+  }
+
+  .climate-grid {
+    grid-template-columns: 1fr;
+  }
+}

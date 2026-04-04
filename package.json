@@ -1,0 +1,22 @@
+{
+  "name": "arduino-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "nuxt dev --port 5173",
+    "build": "nuxt generate",
+    "build:server": "nuxt build",
+    "build:spa": "nuxt generate",
+    "preview": "nuxt preview --port 4173"
+  },
+  "dependencies": {
+    "@nuxt/ui": "^3.2.0",
+    "h3": "^1.15.4",
+    "nuxt": "^3.17.7",
+    "vue": "^3.5.24"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
