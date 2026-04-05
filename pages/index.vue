@@ -33,9 +33,7 @@ interface NormalizedError {
 
 const runtimeConfig = useRuntimeConfig();
 const backendBase = computed(() => {
-  const source = String(
-    runtimeConfig.public.backendBase || 'https://api.temten.me',
-  ).trim();
+  const source = String(runtimeConfig.public.backendBase || '/backend').trim();
 
   if (
     import.meta.client &&

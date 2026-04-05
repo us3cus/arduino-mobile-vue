@@ -12,7 +12,7 @@
 
 ## Запуск
 
-1. Убедитесь, что Nest backend запущен (по умолчанию `https://api.temten.me` или ваш адрес API).
+1. Убедитесь, что Nest backend запущен (по умолчанию frontend ходит в `/backend` на том же домене, либо укажите внешний URL API через переменные окружения).
 2. Установите зависимости:
 
 	```bash
@@ -46,4 +46,6 @@ npm run build:server
 - `NUXT_BACKEND_BASE` - адрес backend для runtime-конфига Nuxt.
 - `NUXT_PUBLIC_BACKEND_BASE` - публичный адрес backend для клиентских запросов.
 
-По умолчанию обе переменные равны `https://api.temten.me`.
+По умолчанию обе переменные равны `/backend` (same-origin через reverse proxy).
+
+Если reverse proxy не настроен, задайте полный URL, например `https://api.temten.me`.
