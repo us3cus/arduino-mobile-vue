@@ -6,7 +6,7 @@ export default defineNuxtConfig({
   css: ['~/assets/css/main.css'],
   app: {
     head: {
-      title: 'Smart Arduino Home',
+      title: 'Growbox Control',
       meta: [
         {
           name: 'viewport',

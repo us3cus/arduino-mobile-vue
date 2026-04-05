@@ -1,6 +1,11 @@
 <script setup lang="ts">
 type HttpMethod = 'GET' | 'POST';
 type RequestStatus = 'success' | 'error';
+type ControlMode = 'manual' | 'auto';
+type RelayChannel = 'light' | 'fan' | 'humidifier' | 'pump';
+type RelayState = 0 | 1;
+
+type RelayStates = Record<RelayChannel, RelayState>;
 
 interface RequestLogEntry {
   id: number;
@@ -31,6 +36,22 @@ interface NormalizedError {
   data: unknown;
 }
 
+const relayOrder: RelayChannel[] = ['light', 'fan', 'humidifier', 'pump'];
+
+const relayTitles: Record<RelayChannel, string> = {
+  light: 'Свет',
+  fan: 'Кулер',
+  humidifier: 'Увлажнитель',
+  pump: 'Насос полива',
+};
+
+const relayPins: Record<RelayChannel, number> = {
+  light: 16,
+  fan: 17,
+  humidifier: 18,
+  pump: 19,
+};
+
 const runtimeConfig = useRuntimeConfig();
 const backendBase = computed(() => {
   const source = String(runtimeConfig.public.backendBase || '/backend').trim();
@@ -48,29 +69,30 @@ const backendBase = computed(() => {
 
 const logs = ref<RequestLogEntry[]>([]);
 const pending = reactive<Record<string, boolean>>({});
-const runFlowPending = ref(false);
 const isRefreshing = ref(false);
-const statusMessage = ref('Подключение к контроллеру...');
+const statusMessage = ref('Подключение к growbox-контроллеру...');
 
 const healthOnline = ref(false);
-const relayState = ref<0 | 1>(0);
-const lastSeen = ref('Нет данных');
+const controlMode = ref<ControlMode>('manual');
+const lastSeenIso = ref<string | null>(null);
+const lastPumpTriggeredIso = ref<string | null>(null);
+
+const relays = reactive<RelayStates>({
+  light: 0,
+  fan: 0,
+  humidifier: 0,
+  pump: 0,
+});
+
 const dht = reactive({
   temperatureC: null as number | null,
   humidity: null as number | null,
 });
 
-const lcdForm = reactive({
-  line1: 'Добро пожаловать',
-  line2: 'Система активна',
-});
-
 const telemetryForm = reactive({
-  device_id: 'esp32-home-01',
-  relay: 0,
-  sensor_mock: 123,
-  temperature_c: 24.5,
-  humidity: 51,
+  device_id: 'esp32-growbox-01',
+  temperature_c: 26,
+  humidity: 60,
 });
 
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
@@ -81,16 +103,8 @@ const failedRequests = computed(
 const successfulRequests = computed(
   () => logs.value.filter((entry) => entry.status === 'success').length,
 );
-
-const relayIsOn = computed(() => relayState.value === 1);
-const relayLabel = computed(() =>
-  relayIsOn.value ? 'Свет в доме включен' : 'Свет в доме выключен',
-);
-const relayButtonLabel = computed(() =>
-  relayIsOn.value ? 'Выключить освещение' : 'Включить освещение',
-);
+const canManualControl = computed(() => controlMode.value === 'manual');
 const connectionTone = computed(() => (healthOnline.value ? 'online' : 'offline'));
-const latestLog = computed(() => logs.value[0] ?? null);
 
 function toRecord(value: unknown): Record<string, unknown> | null {
   if (typeof value === 'object' && value !== null) {
@@ -116,6 +130,22 @@ function toStringSafe(value: unknown): string {
   return '';
 }
 
+function parseRelayState(value: unknown): RelayState | null {
+  if (value === 0 || value === 1) {
+    return value;
+  }
+
+  return null;
+}
+
+function parseMode(value: unknown): ControlMode | null {
+  if (value === 'manual' || value === 'auto') {
+    return value;
+  }
+
+  return null;
+}
+
 function endpoint(path: string): string {
   return `${backendBase.value}${path}`;
 }
@@ -130,6 +160,19 @@ function formatJson(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+function formatTimestamp(value: string | null): string {
+  if (!value) {
+    return 'Нет данных';
+  }
+
+  const asDate = new Date(value);
+  if (Number.isNaN(asDate.getTime())) {
+    return value;
+  }
+
+  return asDate.toLocaleString();
 }
 
 function pushLog(entry: Omit<RequestLogEntry, 'id' | 'timestamp'>) {
@@ -158,23 +201,71 @@ function normalizeError(error: unknown): NormalizedError {
   };
 }
 
+function applyRelays(payload: Record<string, unknown>) {
+  const relayBag = toRecord(payload.relays);
+
+  for (const channel of relayOrder) {
+    const nested = relayBag ? parseRelayState(relayBag[channel]) : null;
+    const flat = parseRelayState(payload[`relay_${channel}`]);
+    const chosen = nested ?? flat;
+
+    if (chosen !== null) {
+      relays[channel] = chosen;
+    }
+  }
+
+  const legacyLight =
+    parseRelayState(payload.relay) ?? parseRelayState(payload.relayState);
+  if (legacyLight !== null) {
+    relays.light = legacyLight;
+  }
+}
+
+function applyAutomation(payload: Record<string, unknown>) {
+  const automation = toRecord(payload.automation);
+  const pump = automation ? toRecord(automation.pump) : null;
+
+  if (!pump) {
+    return;
+  }
+
+  const lastTriggered = toStringSafe(pump.lastTriggeredAt);
+  lastPumpTriggeredIso.value = lastTriggered || null;
+}
+
 function applyRootStatus(response: unknown) {
   const payload = toRecord(response);
-
   if (!payload) {
     return;
   }
 
-  const relay = toFiniteNumber(payload.relayState);
-  if (relay === 0 || relay === 1) {
-    relayState.value = relay;
-    telemetryForm.relay = relay;
+  const mode = parseMode(payload.mode);
+  if (mode) {
+    controlMode.value = mode;
   }
+
+  applyRelays(payload);
+  applyAutomation(payload);
 
   const seen = toStringSafe(payload.lastSeen);
   if (seen) {
-    lastSeen.value = seen;
+    lastSeenIso.value = seen;
   }
+}
+
+function applyModeStatus(response: unknown) {
+  const payload = toRecord(response);
+  if (!payload) {
+    return;
+  }
+
+  const mode = parseMode(payload.mode);
+  if (mode) {
+    controlMode.value = mode;
+  }
+
+  applyRelays(payload);
+  applyAutomation(payload);
 }
 
 function applyHealth(response: unknown) {
@@ -186,27 +277,20 @@ function applyHealth(response: unknown) {
 
 function applyDeviceCommand(response: unknown) {
   const payload = toRecord(response);
-
   if (!payload) {
     return;
   }
 
-  const relay = toFiniteNumber(payload.relay);
-  if (relay === 0 || relay === 1) {
-    relayState.value = relay;
-    telemetryForm.relay = relay;
+  const mode = parseMode(payload.mode);
+  if (mode) {
+    controlMode.value = mode;
   }
 
-  const line1 = toStringSafe(payload.lcd_line1);
-  const line2 = toStringSafe(payload.lcd_line2);
-
-  lcdForm.line1 = line1;
-  lcdForm.line2 = line2;
+  applyRelays(payload);
 }
 
 function applyDht(response: unknown) {
   const payload = toRecord(response);
-
   if (!payload) {
     return;
   }
@@ -216,7 +300,7 @@ function applyDht(response: unknown) {
 
   const seen = toStringSafe(payload.timestamp);
   if (seen) {
-    lastSeen.value = seen;
+    lastSeenIso.value = seen;
   }
 }
 
@@ -291,6 +375,18 @@ async function requestHealth(options: { silent?: boolean } = {}) {
   });
 }
 
+async function requestMode(options: { silent?: boolean } = {}) {
+  return runAction({
+    key: 'mode-get',
+    label: 'Read control mode',
+    method: 'GET',
+    endpoint: '/api/mode',
+    silent: options.silent,
+    logErrors: !options.silent,
+    onSuccess: applyModeStatus,
+  });
+}
+
 async function requestDeviceCommand(options: { silent?: boolean } = {}) {
   return runAction({
     key: 'device-command',
@@ -315,77 +411,34 @@ async function requestDht(options: { silent?: boolean } = {}) {
   });
 }
 
-async function requestSetLcd() {
+async function requestSetMode(mode: ControlMode) {
   return runAction({
-    key: 'set-lcd',
-    label: 'Set LCD text',
+    key: `mode-${mode}`,
+    label: `Set mode ${mode}`,
     method: 'POST',
-    endpoint: '/api/lcd',
-    payload: {
-      line1: lcdForm.line1,
-      line2: lcdForm.line2,
-    },
+    endpoint: '/api/mode',
+    payload: { mode },
+    onSuccess: applyModeStatus,
   });
 }
 
-async function requestClearLcd() {
-  const action = runAction({
-    key: 'clear-lcd',
-    label: 'Clear LCD text',
-    method: 'POST',
-    endpoint: '/api/lcd',
-    payload: {
-      line1: '',
-      line2: '',
-    },
-  });
-
-  lcdForm.line1 = '';
-  lcdForm.line2 = '';
-
-  return action;
-}
-
-async function requestRelayOn() {
+async function requestSetRelay(channel: RelayChannel, state: RelayState) {
   return runAction({
-    key: 'relay-on',
-    label: 'Set relay ON',
+    key: `relay-${channel}`,
+    label: `Set ${channel} ${state === 1 ? 'ON' : 'OFF'}`,
     method: 'POST',
     endpoint: '/api/relay',
     payload: {
-      relay: 1,
+      channel,
+      state,
     },
-    onSuccess: () => {
-      relayState.value = 1;
-      telemetryForm.relay = 1;
-    },
-  });
-}
+    onSuccess: (response) => {
+      const payload = toRecord(response);
+      if (!payload) {
+        return;
+      }
 
-async function requestRelayOff() {
-  return runAction({
-    key: 'relay-off',
-    label: 'Set relay OFF',
-    method: 'POST',
-    endpoint: '/api/relay',
-    payload: {
-      relay: 0,
-    },
-    onSuccess: () => {
-      relayState.value = 0;
-      telemetryForm.relay = 0;
-    },
-  });
-}
-
-async function requestRelayInvalid() {
-  return runAction({
-    key: 'relay-invalid',
-    label: 'Invalid relay (validation test)',
-    method: 'POST',
-    endpoint: '/api/relay',
-    payload: {
-      relay: 2,
+      applyRelays(payload);
     },
   });
 }
@@ -393,26 +446,19 @@ async function requestRelayInvalid() {
 async function requestTelemetry() {
   return runAction({
     key: 'telemetry',
-    label: 'Send telemetry',
+    label: 'Send test telemetry',
     method: 'POST',
     endpoint: '/api/device/telemetry',
     payload: {
-      device_id: telemetryForm.device_id.trim() || 'esp32-home-01',
-      relay: telemetryForm.relay,
-      sensor_mock: telemetryForm.sensor_mock,
+      device_id: telemetryForm.device_id.trim() || 'esp32-growbox-01',
+      relay: relays.light,
+      relay_light: relays.light,
+      relay_fan: relays.fan,
+      relay_humidifier: relays.humidifier,
+      relay_pump: relays.pump,
       temperature_c: telemetryForm.temperature_c,
       humidity: telemetryForm.humidity,
     },
-  });
-}
-
-async function requestRootAfterTelemetry() {
-  return runAction({
-    key: 'root-after-telemetry',
-    label: 'Root status after telemetry',
-    method: 'GET',
-    endpoint: '/',
-    onSuccess: applyRootStatus,
   });
 }
 
@@ -422,7 +468,7 @@ async function refreshSnapshot() {
   }
 
   isRefreshing.value = true;
-  statusMessage.value = 'Обновляем состояние дома...';
+  statusMessage.value = 'Обновляем состояние growbox...';
 
   const healthResult = await requestHealth({ silent: true }).then(
     () => true,
@@ -431,71 +477,39 @@ async function refreshSnapshot() {
 
   await Promise.allSettled([
     requestRootStatus({ silent: true }),
+    requestMode({ silent: true }),
     requestDeviceCommand({ silent: true }),
     requestDht({ silent: true }),
   ]);
 
   healthOnline.value = healthResult;
   statusMessage.value = healthOnline.value
-    ? 'Все работает стабильно'
+    ? controlMode.value === 'auto'
+      ? 'Автономный режим активен'
+      : 'Ручной режим активен'
     : 'Нет связи. Проверьте питание и сеть';
 
   isRefreshing.value = false;
 }
 
-async function toggleRelay() {
-  if (relayIsOn.value) {
-    await requestRelayOff();
-  } else {
-    await requestRelayOn();
-  }
-}
-
-async function runSceneHome() {
-  lcdForm.line1 = 'Добро пожаловать';
-  lcdForm.line2 = 'Режим дом';
-  await requestRelayOn();
-  await requestSetLcd();
+async function switchMode(mode: ControlMode) {
+  await requestSetMode(mode);
   await refreshSnapshot();
 }
 
-async function runSceneNight() {
-  lcdForm.line1 = 'Ночной режим';
-  lcdForm.line2 = 'Тихий дом';
-  await requestRelayOff();
-  await requestSetLcd();
-  await refreshSnapshot();
-}
-
-async function sendQuickTelemetry() {
-  telemetryForm.relay = relayState.value;
-  await requestTelemetry();
-  await requestRootAfterTelemetry();
-  await requestDht({ silent: true });
-}
-
-async function runAllRequestsFlow() {
-  if (runFlowPending.value) {
+async function toggleChannel(channel: RelayChannel) {
+  if (!canManualControl.value) {
     return;
   }
 
-  runFlowPending.value = true;
+  const nextState: RelayState = relays[channel] === 1 ? 0 : 1;
+  await requestSetRelay(channel, nextState);
+  await requestDeviceCommand({ silent: true });
+}
 
-  try {
-    await requestRootStatus();
-    await requestHealth();
-    await requestDeviceCommand();
-    await requestSetLcd();
-    await requestClearLcd();
-    await requestRelayOn();
-    await requestRelayOff();
-    await requestRelayInvalid();
-    await requestTelemetry();
-    await requestRootAfterTelemetry();
-    await requestDht();
-  } finally {
-    runFlowPending.value = false;
-  }
+async function sendTelemetryAndRefresh() {
+  await requestTelemetry();
+  await refreshSnapshot();
 }
 
 function clearLogs() {
@@ -508,7 +522,7 @@ onMounted(async () => {
   refreshTimer = setInterval(() => {
     refreshSnapshot().catch(() => {
       healthOnline.value = false;
-      statusMessage.value = 'Потеряна связь с контроллером';
+      statusMessage.value = 'Потеряна связь с growbox-контроллером';
     });
   }, 15000);
 });
@@ -522,12 +536,12 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main class="smart-page">
-    <section class="hero card">
-      <p class="eyebrow">Smart Home Dashboard</p>
-      <h1>Умный дом Arduino</h1>
+  <main class="growbox-page">
+    <section class="panel hero-panel">
+      <p class="eyebrow">Growbox Control Center</p>
+      <h1>Управление 4-канальным реле</h1>
       <p class="subtitle">
-        Простой экран управления: свет, климат и дисплей устройства в одном месте.
+        Свет, кулер, увлажнитель и насос работают в ручном или автономном режиме.
       </p>
 
       <div class="status-strip" :class="`is-${connectionTone}`">
@@ -535,8 +549,9 @@ onBeforeUnmount(() => {
         <span>{{ statusMessage }}</span>
       </div>
 
-      <div class="chips">
+      <div class="chip-row">
         <span class="chip">Backend: {{ backendBase }}</span>
+        <span class="chip">Режим: {{ controlMode === 'auto' ? 'Авто' : 'Ручной' }}</span>
         <span class="chip">Успех: {{ successfulRequests }}</span>
         <span class="chip">Ошибки: {{ failedRequests }}</span>
       </div>
@@ -554,31 +569,55 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <section class="quick-grid">
-      <article class="card quick-card relay-card">
-        <h2>Освещение</h2>
-        <p class="hint">Управление главным реле одним нажатием.</p>
-        <p class="big-value">{{ relayLabel }}</p>
-        <UButton
-          class="action-btn"
-          size="xl"
-          :color="relayIsOn ? 'error' : 'primary'"
-          :loading="pending['relay-on'] || pending['relay-off']"
-          @click="toggleRelay"
-        >
-          {{ relayButtonLabel }}
-        </UButton>
+    <section class="grid-top">
+      <article class="panel mode-panel">
+        <h2>Режим работы</h2>
+        <p class="hint">
+          В режиме "Авто" сервер сам управляет каналами по сценарию growbox.
+        </p>
+
+        <div class="mode-buttons">
+          <UButton
+            class="action-btn"
+            :color="controlMode === 'manual' ? 'primary' : 'neutral'"
+            :loading="pending['mode-manual']"
+            :disabled="controlMode === 'manual'"
+            @click="switchMode('manual')"
+          >
+            Ручной режим
+          </UButton>
+          <UButton
+            class="action-btn"
+            :color="controlMode === 'auto' ? 'primary' : 'neutral'"
+            :loading="pending['mode-auto']"
+            :disabled="controlMode === 'auto'"
+            @click="switchMode('auto')"
+          >
+            Автономный режим
+          </UButton>
+        </div>
+
+        <ul class="scenario-list">
+          <li>Свет: включен с 08:00 до 22:00</li>
+          <li>Кулер: ON от 28 C, OFF от 25 C</li>
+          <li>Увлажнитель: ON при 55%, OFF при 65%</li>
+          <li>Насос: в 09:00 и 21:00 на 10 секунд</li>
+        </ul>
+
+        <p class="meta">
+          Последний запуск насоса: {{ formatTimestamp(lastPumpTriggeredIso) }}
+        </p>
       </article>
 
-      <article class="card quick-card climate-card">
-        <h2>Климат</h2>
-        <p class="hint">Температура и влажность с датчика DHT.</p>
+      <article class="panel climate-panel">
+        <h2>Климат и телеметрия</h2>
+        <p class="hint">Показания DHT и отправка тестовой телеметрии на сервер.</p>
 
         <div class="climate-grid">
           <div class="climate-box">
             <span>Температура</span>
             <strong>
-              {{ dht.temperatureC === null ? '--' : `${dht.temperatureC} °C` }}
+              {{ dht.temperatureC === null ? '--' : `${dht.temperatureC} C` }}
             </strong>
           </div>
           <div class="climate-box">
@@ -587,163 +626,98 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <p class="meta">Последнее обновление: {{ lastSeen }}</p>
+        <p class="meta">Последняя телеметрия: {{ formatTimestamp(lastSeenIso) }}</p>
 
-        <UButton
-          class="action-btn"
-          color="neutral"
-          :loading="pending['device-dht']"
-          @click="() => requestDht()"
-        >
-          Обновить климат
-        </UButton>
-      </article>
+        <div class="telemetry-form">
+          <label>
+            Device ID
+            <input v-model="telemetryForm.device_id" type="text" maxlength="64" />
+          </label>
+          <label>
+            Температура (C)
+            <input v-model.number="telemetryForm.temperature_c" type="number" step="0.1" />
+          </label>
+          <label>
+            Влажность (%)
+            <input v-model.number="telemetryForm.humidity" type="number" step="0.1" />
+          </label>
+        </div>
 
-      <article class="card quick-card scene-card">
-        <h2>Сценарии</h2>
-        <p class="hint">Готовые действия как в приложениях умного дома.</p>
-
-        <div class="button-stack">
+        <div class="climate-actions">
+          <UButton
+            class="action-btn"
+            color="neutral"
+            :loading="pending['device-dht']"
+            @click="() => requestDht()"
+          >
+            Обновить DHT
+          </UButton>
           <UButton
             class="action-btn"
             color="primary"
-            :loading="pending['relay-on'] || pending['set-lcd']"
-            @click="runSceneHome"
-          >
-            Я дома
-          </UButton>
-          <UButton
-            class="action-btn"
-            color="neutral"
-            :loading="pending['relay-off'] || pending['set-lcd']"
-            @click="runSceneNight"
-          >
-            Ночной режим
-          </UButton>
-          <UButton
-            class="action-btn"
-            color="neutral"
             :loading="pending.telemetry"
-            @click="sendQuickTelemetry"
+            @click="sendTelemetryAndRefresh"
           >
-            Отправить телеметрию
-          </UButton>
-        </div>
-      </article>
-
-      <article class="card quick-card lcd-card">
-        <h2>Экран устройства</h2>
-        <p class="hint">Сообщение на LCD, которое увидит пользователь у устройства.</p>
-
-        <div class="form-grid">
-          <label class="field full">
-            <span>Строка 1</span>
-            <input v-model="lcdForm.line1" type="text" maxlength="32" />
-          </label>
-          <label class="field full">
-            <span>Строка 2</span>
-            <input v-model="lcdForm.line2" type="text" maxlength="32" />
-          </label>
-        </div>
-
-        <div class="button-stack">
-          <UButton
-            class="action-btn"
-            color="primary"
-            :loading="pending['set-lcd']"
-            @click="requestSetLcd"
-          >
-            Сохранить сообщение
-          </UButton>
-          <UButton
-            class="action-btn"
-            color="neutral"
-            :loading="pending['clear-lcd']"
-            @click="requestClearLcd"
-          >
-            Очистить экран
+            Отправить тестовую телеметрию
           </UButton>
         </div>
       </article>
     </section>
 
-    <section class="card support-panel">
-      <details>
-        <summary>Расширенные инструменты поддержки</summary>
-        <p class="hint">
-          Полный набор запросов для диагностики и тестов из test-requests.http.
-        </p>
-
-        <div class="advanced-grid">
-          <UButton class="action-btn" @click="() => requestRootStatus()">
-            GET /
-          </UButton>
-          <UButton class="action-btn" color="neutral" @click="() => requestHealth()">
-            GET /health
-          </UButton>
-          <UButton
-            class="action-btn"
-            color="neutral"
-            @click="() => requestDeviceCommand()"
-          >
-            GET /api/device/command
-          </UButton>
-          <UButton class="action-btn" color="neutral" @click="() => requestDht()">
-            GET /api/device/dht
-          </UButton>
-          <UButton class="action-btn" color="success" @click="requestRelayOn">
-            POST /api/relay { relay: 1 }
-          </UButton>
-          <UButton class="action-btn" color="neutral" @click="requestRelayOff">
-            POST /api/relay { relay: 0 }
-          </UButton>
-          <UButton class="action-btn" color="error" @click="requestRelayInvalid">
-            POST /api/relay { relay: 2 }
-          </UButton>
-          <UButton class="action-btn" color="neutral" @click="requestSetLcd">
-            POST /api/lcd (set)
-          </UButton>
-          <UButton class="action-btn" color="neutral" @click="requestClearLcd">
-            POST /api/lcd (clear)
-          </UButton>
-          <UButton class="action-btn" color="neutral" @click="requestTelemetry">
-            POST /api/device/telemetry
-          </UButton>
-          <UButton
-            class="action-btn"
-            color="neutral"
-            @click="requestRootAfterTelemetry"
-          >
-            GET / after telemetry
-          </UButton>
-          <UButton
-            class="action-btn"
-            color="primary"
-            :loading="runFlowPending"
-            @click="runAllRequestsFlow"
-          >
-            Полный тестовый прогон
-          </UButton>
+    <section class="panel relay-panel">
+      <div class="relay-header">
+        <div>
+          <h2>Каналы реле</h2>
+          <p class="hint">
+            Пины: свет 16, кулер 17, увлажнитель 18, насос 19.
+          </p>
         </div>
-      </details>
+        <strong class="manual-note" :class="{ disabled: !canManualControl }">
+          {{
+            canManualControl
+              ? 'Ручное управление активно'
+              : 'Кнопки заблокированы: работает авто-сценарий'
+          }}
+        </strong>
+      </div>
+
+      <div class="relay-grid">
+        <article v-for="channel in relayOrder" :key="channel" class="relay-card">
+          <p class="relay-title">{{ relayTitles[channel] }}</p>
+          <p class="relay-pin">GPIO {{ relayPins[channel] }}</p>
+          <p class="relay-state" :class="{ on: relays[channel] === 1 }">
+            {{ relays[channel] === 1 ? 'ВКЛ' : 'ВЫКЛ' }}
+          </p>
+
+          <UButton
+            class="action-btn"
+            :color="relays[channel] === 1 ? 'error' : 'primary'"
+            :disabled="!canManualControl"
+            :loading="pending[`relay-${channel}`]"
+            @click="toggleChannel(channel)"
+          >
+            {{ relays[channel] === 1 ? 'Выключить' : 'Включить' }}
+          </UButton>
+        </article>
+      </div>
     </section>
 
-    <section class="card history-panel">
+    <section class="panel history-panel">
       <div class="history-head">
         <div>
-          <h2>История действий</h2>
-          <p class="hint">Последние ответы от контроллера.</p>
+          <h2>Журнал запросов</h2>
+          <p class="hint">Последние команды и ответы сервера.</p>
         </div>
         <UButton class="action-btn" color="neutral" variant="soft" @click="clearLogs">
           Очистить
         </UButton>
       </div>
 
-      <div v-if="!latestLog" class="log-empty">Пока нет действий.</div>
+      <div v-if="logs.length === 0" class="log-empty">Пока нет записей.</div>
 
       <div v-else class="log-list">
         <article
-          v-for="entry in logs.slice(0, 8)"
+          v-for="entry in logs.slice(0, 10)"
           :key="entry.id"
           class="log-item"
           :class="`is-${entry.status}`"

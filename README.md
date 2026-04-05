@@ -1,11 +1,11 @@
-# Arduino Control UI (Nuxt + Nuxt UI)
+# Growbox Control UI (Nuxt + Nuxt UI)
 
-Адаптивное SPA-приложение для управления Arduino через Nest backend в стиле готовых систем умного дома.
+Адаптивное SPA-приложение для управления growbox через Nest backend.
 
 ## Что внутри
 
 - Nuxt 3 + Nuxt UI
-- Упрощенная панель: свет, климат, LCD и готовые сценарии
+- Панель growbox: 4 канала реле, ручной/авто режим, климат и журнал команд
 - Расширенный сервисный блок со всеми запросами из `test-requests.http`
 - Mobile-first верстка
 - SPA-сборка (`nuxt generate`)
