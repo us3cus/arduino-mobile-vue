@@ -33,7 +33,18 @@ interface NormalizedError {
 
 const runtimeConfig = useRuntimeConfig();
 const backendBase = computed(() => {
-  const source = String(runtimeConfig.public.backendBase || 'http://api.temten.me');
+  const source = String(
+    runtimeConfig.public.backendBase || 'https://api.temten.me',
+  ).trim();
+
+  if (
+    import.meta.client &&
+    window.location.protocol === 'https:' &&
+    source.startsWith('http://')
+  ) {
+    return source.replace(/^http:\/\//, 'https://').replace(/\/$/, '');
+  }
+
   return source.replace(/\/$/, '');
 });
 

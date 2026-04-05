@@ -21,10 +21,10 @@ export default defineNuxtConfig({
     },
   },
   runtimeConfig: {
-    backendBase: process.env.NUXT_BACKEND_BASE ?? 'http://api.temten.me',
+    backendBase: process.env.NUXT_BACKEND_BASE ?? 'https://api.temten.me',
     public: {
       backendBase:
-        process.env.NUXT_PUBLIC_BACKEND_BASE ?? 'http://api.temten.me',
+        process.env.NUXT_PUBLIC_BACKEND_BASE ?? 'https://api.temten.me',
     },
   },
 });
